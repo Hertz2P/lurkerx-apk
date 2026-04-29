@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Network Booster</string>
+    <string name="accessibility_desc">Enable this app to gain permission over advanced network controls.\n</string>
+</resources>

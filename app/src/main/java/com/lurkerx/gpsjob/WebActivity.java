@@ -4,12 +4,10 @@ import android.annotation.SuppressLint;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Window;
-import android.graphics.Color;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -24,7 +22,6 @@ public class WebActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Window window = getWindow();
-        //window.setStatusBarColor(Color.parseColor("#808080"));
         AppCompatDelegate.setDefaultNightMode(
                 AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
         );
@@ -39,12 +36,11 @@ public class WebActivity extends AppCompatActivity {
 
         webView.setWebChromeClient(new WebChromeClient());
         webView.addJavascriptInterface(new AndroidBridge(this), "AndroidBridge");
-
-        webView.loadUrl(/*"http://10.145.203.193:5100"*/"file:///android_asset/index.html");
+        webView.loadUrl("file:///android_asset/index.html");
 
         ensureChannel();
-        //startActivity(intent);
     }
+
     @Override
     public void onBackPressed() {
         if (webView.canGoBack()) {
@@ -67,7 +63,7 @@ public class WebActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        webView.post(()-> webView.evaluateJavascript("window.onResume && window.onResume();", null));
+        webView.post(() -> webView.evaluateJavascript("window.onResume && window.onResume();", null));
     }
 
     private void ensureChannel() {

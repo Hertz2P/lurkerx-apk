@@ -19,10 +19,6 @@
         tools:ignore="ProtectedPermissions" />
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"
-        tools:ignore="ProtectedPermissions" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -59,25 +55,6 @@
         </activity>
 
         <service
-            android:name=".AppAccessibilityService"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="false" >
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_config"/>
-        </service>
-
-        <service android:name=".GpsService" android:exported="false"
-            android:foregroundServiceType="location" android:permission="android.permission.FOREGROUND_SERVICE_LOCATION"/>
-
-        <service android:name="com.lurkerx.gpsjob.calljob.CallService" android:exported="false"
-            android:foregroundServiceType="dataSync" android:permission="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
-
-        <service
             android:name="com.lurkerx.gpsjob.notifjob.NotificationService"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="true"
@@ -90,6 +67,14 @@
         <receiver android:name="com.lurkerx.gpsjob.smsjob.SmsReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_RECEIVED"/>
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </receiver>
     </application>

